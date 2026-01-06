@@ -82,7 +82,7 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
 
   // --- Settings / preferences ---
   bool _onboardingDone = false;
-  ThemeMode _themeMode = ThemeMode.system;
+  ThemeMode _themeMode = ThemeMode.light;
   String _currencySymbol = 'Rs.'; // or "LKR"
   double? _monthlyBudget; // null = no budget set
   String? _pinCode; // null or empty = no lock
@@ -127,11 +127,11 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
 
     // Basic settings
     _onboardingDone = prefs.getBool('onboarding_done') ?? false;
-    final themeString = prefs.getString('theme_mode') ?? 'system';
+    final themeString = prefs.getString('theme_mode') ?? 'light';
     _themeMode = switch (themeString) {
       'light' => ThemeMode.light,
       'dark' => ThemeMode.dark,
-      _ => ThemeMode.system,
+      _ => ThemeMode.light,
     };
     _currencySymbol = prefs.getString('currency_symbol') ?? 'Rs.';
     _monthlyBudget = prefs.getDouble('monthly_budget');
@@ -588,30 +588,35 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
                 ),
               ),
               child: SafeArea(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Stack(
                   children: [
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: SizedBox(
-                            height: 72,
-                            child: Image.asset(
-                              'logo.png',
-                              fit: BoxFit.contain,
-                            ),
+                    // Logo at top left corner
+                    Positioned(
+                      top: 8,
+                      left: 16,
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: SizedBox(
+                          height: 120,
+                          width: 120,
+                          child: Image.asset(
+                            'logo.png',
+                            fit: BoxFit.contain,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                      ),
+                    ),
+                    // Main content
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 8),
                         Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Text(
                               "Iishi's",
@@ -631,41 +636,43 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Total Spent (${_timeFilterLabel(_timeFilter)})',
-                      style: GoogleFonts.poppins(
-                          color: Colors.white70, fontSize: 14),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _currencyFormat.format(total),
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildMiniStat('Txns', '${filtered.length}'),
-                        Container(height: 20, width: 1, color: Colors.white24),
-                        _buildMiniStat(
-                          'Avg',
-                          filtered.isEmpty
-                              ? '-'
-                              : _currencyFormat.format(total / filtered.length),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Total Spent (${_timeFilterLabel(_timeFilter)})',
+                          style: GoogleFonts.poppins(
+                              color: Colors.white70, fontSize: 14),
                         ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _currencyFormat.format(total),
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildMiniStat('Txns', '${filtered.length}'),
+                            Container(
+                                height: 20, width: 1, color: Colors.white24),
+                            _buildMiniStat(
+                              'Avg',
+                              filtered.isEmpty
+                                  ? '-'
+                                  : _currencyFormat
+                                      .format(total / filtered.length),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        // LEVEL 3: Budget quick view
+                        if (_monthlyBudget != null)
+                          _buildBudgetChip(currentMonthTotal, _monthlyBudget!),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    // LEVEL 3: Budget quick view
-                    if (_monthlyBudget != null)
-                      _buildBudgetChip(currentMonthTotal, _monthlyBudget!),
                   ],
                 ),
               ),
