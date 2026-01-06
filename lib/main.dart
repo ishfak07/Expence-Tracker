@@ -15,6 +15,31 @@ Future<void> main() async {
   runApp(const SriLankaExpenseTrackerApp());
 }
 
+/// User model for authentication
+class User {
+  final String username;
+  final String password;
+  final String displayName;
+
+  User({
+    required this.username,
+    required this.password,
+    required this.displayName,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'username': username,
+        'password': password,
+        'displayName': displayName,
+      };
+
+  factory User.fromJson(Map<String, dynamic> json) => User(
+        username: json['username'],
+        password: json['password'],
+        displayName: json['displayName'],
+      );
+}
+
 /// Simple enum to control the time filter on the dashboard.
 enum TimeFilter { today, week, month, all }
 
@@ -78,6 +103,10 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
     'Other'
   ];
 
+  // --- User Authentication ---
+  User? _currentUser;
+  bool _isLoggedIn = false;
+
   List<Expense> _expenses = [];
 
   // --- Settings / preferences ---
@@ -100,6 +129,9 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
 
   SharedPreferences? _prefs;
 
+  // Normalize usernames to avoid case/whitespace login issues
+  String _normalizeUsername(String username) => username.trim().toLowerCase();
+
   NumberFormat get _currencyFormat => NumberFormat.currency(
         locale: 'en_LK',
         symbol: '$_currencySymbol ',
@@ -109,15 +141,39 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
   @override
   void initState() {
     super.initState();
-    _loadFromPrefs();
+    _checkLoginStatus();
   }
 
-  Future<void> _loadFromPrefs() async {
+  // Get user-specific key prefix (normalized username)
+  String _userKey(String key) {
+    final u = _currentUser?.username;
+    final normalized = u == null ? 'guest' : _normalizeUsername(u);
+    return '${normalized}_$key';
+  }
+
+  Future<void> _checkLoginStatus() async {
     final prefs = await SharedPreferences.getInstance();
     _prefs = prefs;
 
-    // Load expenses list
-    final stored = prefs.getStringList('expenses');
+    // Check if user is logged in
+    final lastUser = prefs.getString('last_logged_in_user');
+    if (lastUser != null) {
+      final userData = prefs.getString('user_$lastUser');
+      if (userData != null) {
+        _currentUser = User.fromJson(jsonDecode(userData));
+        _isLoggedIn = true;
+        await _loadFromPrefs();
+      }
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadFromPrefs() async {
+    if (_prefs == null || _currentUser == null) return;
+
+    // Load expenses list (user-specific)
+    final stored = _prefs!.getStringList(_userKey('expenses'));
     if (stored != null) {
       _expenses = stored
           .map((e) => Expense.fromJson(jsonDecode(e) as Map<String, dynamic>))
@@ -125,18 +181,19 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
         ..sort((a, b) => b.date.compareTo(a.date));
     }
 
-    // Basic settings
-    _onboardingDone = prefs.getBool('onboarding_done') ?? false;
-    final themeString = prefs.getString('theme_mode') ?? 'light';
+    // Basic settings (user-specific)
+    _onboardingDone = _prefs!.getBool(_userKey('onboarding_done')) ?? false;
+    final themeString = _prefs!.getString(_userKey('theme_mode')) ?? 'light';
     _themeMode = switch (themeString) {
       'light' => ThemeMode.light,
       'dark' => ThemeMode.dark,
       _ => ThemeMode.light,
     };
-    _currencySymbol = prefs.getString('currency_symbol') ?? 'Rs.';
-    _monthlyBudget = prefs.getDouble('monthly_budget');
-    _pinCode = prefs.getString('pin_code');
-    _dailyReminderEnabled = prefs.getBool('daily_reminder') ?? false;
+    _currencySymbol = _prefs!.getString(_userKey('currency_symbol')) ?? 'Rs.';
+    _monthlyBudget = _prefs!.getDouble(_userKey('monthly_budget'));
+    _pinCode = _prefs!.getString(_userKey('pin_code'));
+    _dailyReminderEnabled =
+        _prefs!.getBool(_userKey('daily_reminder')) ?? false;
 
     // If no PIN, app is already unlocked
     _isUnlocked = _pinCode == null || _pinCode!.isEmpty;
@@ -151,33 +208,133 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
   }
 
   Future<void> _saveExpenses() async {
+    if (_currentUser == null) return;
     final prefs = _prefs ?? await SharedPreferences.getInstance();
     final list = _expenses.map((e) => jsonEncode(e.toJson())).toList();
-    await prefs.setStringList('expenses', list);
+    await prefs.setStringList(_userKey('expenses'), list);
   }
 
   Future<void> _saveSettings() async {
+    if (_currentUser == null) return;
     final prefs = _prefs ?? await SharedPreferences.getInstance();
-    await prefs.setBool('onboarding_done', _onboardingDone);
+    await prefs.setBool(_userKey('onboarding_done'), _onboardingDone);
     await prefs.setString(
-        'theme_mode',
+        _userKey('theme_mode'),
         switch (_themeMode) {
           ThemeMode.light => 'light',
           ThemeMode.dark => 'dark',
           _ => 'system',
         });
-    await prefs.setString('currency_symbol', _currencySymbol);
+    await prefs.setString(_userKey('currency_symbol'), _currencySymbol);
     if (_monthlyBudget != null) {
-      await prefs.setDouble('monthly_budget', _monthlyBudget!);
+      await prefs.setDouble(_userKey('monthly_budget'), _monthlyBudget!);
     } else {
-      await prefs.remove('monthly_budget');
+      await prefs.remove(_userKey('monthly_budget'));
     }
     if (_pinCode != null && _pinCode!.isNotEmpty) {
-      await prefs.setString('pin_code', _pinCode!);
+      await prefs.setString(_userKey('pin_code'), _pinCode!);
     } else {
-      await prefs.remove('pin_code');
+      await prefs.remove(_userKey('pin_code'));
     }
-    await prefs.setBool('daily_reminder', _dailyReminderEnabled);
+    await prefs.setBool(_userKey('daily_reminder'), _dailyReminderEnabled);
+  }
+
+  // ---------- User Authentication helpers ----------
+
+  Future<bool> _registerUser(
+      String username, String password, String displayName) async {
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+
+    final normalized = _normalizeUsername(username);
+    if (normalized.isEmpty || password.isEmpty || displayName.trim().isEmpty) {
+      return false;
+    }
+
+    // Check if username already exists
+    if (prefs.getString('user_$normalized') != null) {
+      return false; // User already exists
+    }
+
+    // Create and save new user (store normalized username)
+    final user = User(
+      username: normalized,
+      password: password,
+      displayName: displayName.trim(),
+    );
+    await prefs.setString('user_$normalized', jsonEncode(user.toJson()));
+
+    // Log in the new user
+    setState(() {
+      _currentUser = user;
+      _isLoggedIn = true;
+    });
+    await prefs.setString('last_logged_in_user', normalized);
+    await _loadFromPrefs();
+
+    return true;
+  }
+
+  Future<bool> _loginUser(String username, String password) async {
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+
+    final normalized = _normalizeUsername(username);
+    // Try normalized key first, then legacy key for backward compatibility
+    String? userData = prefs.getString('user_$normalized');
+    userData ??= prefs.getString('user_$username');
+    if (userData == null) {
+      return false; // User not found
+    }
+
+    final user = User.fromJson(jsonDecode(userData));
+    if (user.password != password) {
+      return false; // Wrong password
+    }
+
+    // Login successful
+    setState(() {
+      _currentUser = user;
+      _isLoggedIn = true;
+    });
+    await prefs.setString('last_logged_in_user', user.username);
+    await _loadFromPrefs();
+
+    return true;
+  }
+
+  Future<void> _logoutUser() async {
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+    // Remove per-user keys for the current user
+    if (_currentUser != null) {
+      final keys = [
+        _userKey('expenses'),
+        _userKey('onboarding_done'),
+        _userKey('theme_mode'),
+        _userKey('currency_symbol'),
+        _userKey('monthly_budget'),
+        _userKey('pin_code'),
+        _userKey('daily_reminder'),
+      ];
+      for (final k in keys) {
+        await prefs.remove(k);
+      }
+    }
+
+    await prefs.remove('last_logged_in_user');
+
+    setState(() {
+      _currentUser = null;
+      _isLoggedIn = false;
+      _expenses = [];
+      _onboardingDone = false;
+      _themeMode = ThemeMode.light;
+      _currencySymbol = 'Rs.';
+      _monthlyBudget = null;
+      _pinCode = null;
+      _isUnlocked = false;
+      _dailyReminderEnabled = false;
+      _selectedTab = 0;
+      _timeFilter = TimeFilter.today;
+    });
   }
 
   // ---------- Expense helpers ----------
@@ -416,6 +573,14 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
   }
 
   Widget _buildHome() {
+    // LEVEL 5: Show login screen if not logged in
+    if (!_isLoggedIn) {
+      return LoginScreen(
+        onLogin: _loginUser,
+        onRegister: _registerUser,
+      );
+    }
+
     // LEVEL 4: Onboarding first time
     if (!_onboardingDone) {
       return OnboardingScreen(
@@ -485,7 +650,19 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
                 _isUnlocked = true;
               });
               final prefs = _prefs ?? await SharedPreferences.getInstance();
-              await prefs.clear();
+              // Remove only current user's data, keep other accounts
+              final keys = [
+                _userKey('expenses'),
+                _userKey('onboarding_done'),
+                _userKey('theme_mode'),
+                _userKey('currency_symbol'),
+                _userKey('monthly_budget'),
+                _userKey('pin_code'),
+                _userKey('daily_reminder'),
+              ];
+              for (final k in keys) {
+                await prefs.remove(k);
+              }
               await _saveExpenses();
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -502,6 +679,28 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
           },
           onSetPin: _setPin,
           onRemovePin: _removePin,
+          onLogout: () async {
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Logout?'),
+                content: const Text(
+                    'You will need to login again to access your data.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancel')),
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Logout')),
+                ],
+              ),
+            );
+            if (confirmed == true) {
+              await _logoutUser();
+            }
+          },
+          currentUsername: _currentUser?.displayName,
         ),
       ],
     );
@@ -1601,6 +1800,8 @@ class SettingsTab extends StatelessWidget {
   final ValueChanged<bool> onToggleReminder;
   final ValueChanged<String> onSetPin;
   final VoidCallback onRemovePin;
+  final VoidCallback onLogout;
+  final String? currentUsername;
 
   const SettingsTab({
     super.key,
@@ -1618,6 +1819,8 @@ class SettingsTab extends StatelessWidget {
     required this.onToggleReminder,
     required this.onSetPin,
     required this.onRemovePin,
+    required this.onLogout,
+    this.currentUsername,
   });
 
   @override
@@ -1802,6 +2005,27 @@ class SettingsTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          const Text('Account', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                if (currentUsername != null)
+                  ListTile(
+                    leading: const Icon(Icons.person_rounded),
+                    title: const Text('Logged in as'),
+                    subtitle: Text(currentUsername!),
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.logout_rounded),
+                  title: const Text('Logout'),
+                  subtitle: const Text('Switch to a different account'),
+                  onTap: onLogout,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
           const Text('About', style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           Card(
@@ -1819,5 +2043,214 @@ class SettingsTab extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Login/Register Screen
+class LoginScreen extends StatefulWidget {
+  final Future<bool> Function(String username, String password) onLogin;
+  final Future<bool> Function(
+      String username, String password, String displayName) onRegister;
+
+  const LoginScreen({
+    super.key,
+    required this.onLogin,
+    required this.onRegister,
+  });
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  bool _isLoginMode = true;
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _displayNameController = TextEditingController();
+  bool _isLoading = false;
+
+  Future<void> _submit() async {
+    if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
+      _showError('Please fill all fields');
+      return;
+    }
+
+    if (!_isLoginMode && _displayNameController.text.isEmpty) {
+      _showError('Please enter your display name');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    bool success;
+    if (_isLoginMode) {
+      success = await widget.onLogin(
+        _usernameController.text.trim(),
+        _passwordController.text,
+      );
+      if (!success) {
+        _showError('Invalid username or password');
+      }
+    } else {
+      success = await widget.onRegister(
+        _usernameController.text.trim(),
+        _passwordController.text,
+        _displayNameController.text.trim(),
+      );
+      if (!success) {
+        _showError('Username already exists');
+      }
+    }
+
+    setState(() => _isLoading = false);
+  }
+
+  void _showError(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF00C853),
+              Color(0xFF40C4FF),
+              Color(0xFF7C4DFF),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: Card(
+                elevation: 8,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        height: 80,
+                        width: 80,
+                        child: Image.asset('logo.png', fit: BoxFit.contain),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        "Iishi's Expense Tracker",
+                        style: GoogleFonts.poppins(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _isLoginMode
+                            ? 'Login to your account'
+                            : 'Create new account',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      if (!_isLoginMode)
+                        TextField(
+                          controller: _displayNameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Display Name',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.person_rounded),
+                          ),
+                        ),
+                      if (!_isLoginMode) const SizedBox(height: 16),
+                      TextField(
+                        controller: _usernameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Username',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.account_circle_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _passwordController,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Password',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.lock_rounded),
+                        ),
+                        onSubmitted: (_) => _submit(),
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _submit,
+                          style: ElevatedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : Text(
+                                  _isLoginMode ? 'Login' : 'Register',
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _isLoginMode = !_isLoginMode;
+                            _usernameController.clear();
+                            _passwordController.clear();
+                            _displayNameController.clear();
+                          });
+                        },
+                        child: Text(
+                          _isLoginMode
+                              ? "Don't have an account? Register"
+                              : 'Already have an account? Login',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _displayNameController.dispose();
+    super.dispose();
   }
 }
