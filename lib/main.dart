@@ -93,7 +93,7 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
   int _selectedTab = 0; // 0 = Home, 1 = History, 2 = Settings
 
   // Dashboard filter
-  TimeFilter _timeFilter = TimeFilter.month;
+  TimeFilter _timeFilter = TimeFilter.today;
 
   // History screen
   DateTime? _selectedHistoryMonth; // first day of month
@@ -794,7 +794,7 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const SizedBox(height: 40),
-                      Icon(Icons.wallet_rounded,
+                      Icon(Icons.receipt_long_rounded,
                           size: 72, color: Colors.grey[300]),
                       const SizedBox(height: 16),
                       Text(
@@ -1497,7 +1497,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         'Quickly record cash spending in Sri Lankan Rupees.',
                   ),
                   _OnboardingPage(
-                    icon: Icons.savings_rounded,
+                    icon: Icons.bar_chart_rounded,
                     title: 'See where money goes',
                     subtitle:
                         'Smart charts and category breakdowns help you save.',
