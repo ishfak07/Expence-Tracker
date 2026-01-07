@@ -964,7 +964,7 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
                                       ),
                                     ),
                                   )
-                                  .toList(),
+                                  ,
                             ],
                           ),
                         ),
@@ -1168,8 +1168,9 @@ class _SriLankaExpenseTrackerAppState extends State<SriLankaExpenseTrackerApp> {
               showTitles: true,
               getTitlesWidget: (value, meta) {
                 final index = value.toInt();
-                if (index < 0 || index >= days.length)
+                if (index < 0 || index >= days.length) {
                   return const SizedBox.shrink();
+                }
                 return Padding(
                   padding: const EdgeInsets.only(top: 4.0),
                   child: Text(
@@ -1519,8 +1520,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                               color:
                                   isSelected ? Colors.white : Colors.black87),
                           onSelected: (selected) {
-                            if (selected)
+                            if (selected) {
                               setState(() => _selectedCategory = cat);
+                            }
                           },
                         );
                       }).toList(),
@@ -1534,8 +1536,9 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                           firstDate: DateTime(2020),
                           lastDate: DateTime.now(),
                         );
-                        if (picked != null)
+                        if (picked != null) {
                           setState(() => _selectedDate = picked);
+                        }
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
